@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แผงผู้ดูแล — คลังภาพกิจกรรมโรงเรียน</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-mark"><i class="ti ti-settings"></i></div>
+        <div>
+          <h1>แผงผู้ดูแลคลังภาพ</h1>
+          <p>เพิ่มและจัดการอัลบั้มกิจกรรม</p>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <a class="admin-link" href="index.html"><i class="ti ti-arrow-left"></i> หน้าเว็บ</a>
+        <button class="admin-link" id="btn-logout" hidden
+                style="cursor:pointer; background:none; font:inherit;">
+          <i class="ti ti-logout"></i> ออกจากระบบ
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== หน้า login ===== -->
+  <section id="login-view" class="container">
+    <div class="login-card">
+      <h2>เข้าสู่ระบบผู้ดูแล</h2>
+      <p class="sub">สำหรับครูและเจ้าหน้าที่ที่ได้รับอนุญาต</p>
+      <div class="field">
+        <label for="username">ชื่อผู้ใช้</label>
+        <input id="username" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">รหัสผ่าน</label>
+        <input id="password" type="password" autocomplete="current-password">
+      </div>
+      <button class="btn primary block" id="btn-login">
+        <i class="ti ti-login"></i> เข้าสู่ระบบ
+      </button>
+    </div>
+  </section>
+
+  <!-- ===== หน้าจัดการ (แสดงหลัง login) ===== -->
+  <main id="admin-view" class="container" hidden>
+
+    <!-- ฟอร์มเพิ่มอัลบั้ม -->
+    <section class="admin-section">
+      <h3><i class="ti ti-folder-plus"></i> เพิ่มอัลบั้มใหม่</h3>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="f-url">ลิงก์โฟลเดอร์ Google Drive</label>
+          <input id="f-url" placeholder="https://drive.google.com/drive/folders/...">
+        </div>
+        <div class="field">
+          <label for="f-name">ชื่อกิจกรรม</label>
+          <input id="f-name" placeholder="เช่น กีฬาสี 2569">
+        </div>
+        <div class="field">
+          <label for="f-cat">หมวดหมู่</label>
+          <input id="f-cat" list="cat-list" placeholder="เช่น กีฬา วันสำคัญ">
+          <datalist id="cat-list"></datalist>
+        </div>
+        <div class="field">
+          <label for="f-date">วันที่จัดกิจกรรม</label>
+          <input id="f-date" type="date">
+        </div>
+        <div class="field">
+          <label for="f-year">ปีการศึกษา (พ.ศ.)</label>
+          <input id="f-year" placeholder="เช่น 2569">
+        </div>
+      </div>
+      <button class="btn primary" id="btn-add">
+        <i class="ti ti-plus"></i> เพิ่มอัลบั้ม (ระบบจะสแกนรูปปกให้อัตโนมัติ)
+      </button>
+    </section>
+
+    <!-- รายการอัลบั้มทั้งหมด -->
+    <section class="admin-section">
+      <h3><i class="ti ti-photo"></i> อัลบั้มทั้งหมด <span id="album-count" style="color:var(--muted); font-weight:400;"></span></h3>
+      <div id="album-list"><p class="hint" style="color:var(--muted); font-size:13.5px;">กำลังโหลด…</p></div>
+    </section>
+
+  </main>
+
+  <div id="toast" role="status"></div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

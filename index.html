@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>คลังภาพกิจกรรมโรงเรียน</title>
+  <meta name="description" content="รวมอัลบั้มภาพกิจกรรมของโรงเรียน เปิดดูรูปได้ผ่าน Google Drive">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ส่วนหัว -->
+  <header class="site-header">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-mark"><i class="ti ti-photo"></i></div>
+        <div>
+          <h1>คลังภาพกิจกรรมโรงเรียน</h1>
+          <p id="brand-sub">รวมอัลบั้มภาพกิจกรรมทุกงาน</p>
+        </div>
+      </div>
+      <a class="admin-link" href="admin.html"><i class="ti ti-lock"></i> ผู้ดูแล</a>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- แถบเครื่องมือ: ค้นหา + กรอง + สลับมุมมอง -->
+    <section class="toolbar">
+      <div class="search-box">
+        <i class="ti ti-search icon"></i>
+        <input type="search" id="search" placeholder="ค้นหากิจกรรม เช่น กีฬาสี วันไหว้ครู">
+      </div>
+      <div class="filter-row">
+        <div class="chips" id="chips"></div>
+        <select class="year-select" id="year-select">
+          <option value="">ทุกปีการศึกษา</option>
+        </select>
+        <div class="view-toggle" role="tablist">
+          <button id="btn-grid" class="active" role="tab" aria-selected="true">
+            <i class="ti ti-layout-grid"></i> อัลบั้ม
+          </button>
+          <button id="btn-cal" role="tab" aria-selected="false">
+            <i class="ti ti-calendar"></i> ปฏิทิน
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- มุมมองอัลบั้ม (กริด) -->
+    <section id="view-grid" class="album-grid" aria-label="รายการอัลบั้ม"></section>
+
+    <!-- มุมมองปฏิทิน -->
+    <section id="view-cal" class="calendar-wrap" hidden aria-label="ปฏิทินกิจกรรม">
+      <div class="cal-head">
+        <div class="cal-title" id="cal-title"></div>
+        <div class="cal-nav">
+          <button id="cal-prev" aria-label="เดือนก่อนหน้า"><i class="ti ti-chevron-left"></i></button>
+          <button id="cal-today">วันนี้</button>
+          <button id="cal-next" aria-label="เดือนถัดไป"><i class="ti ti-chevron-right"></i></button>
+        </div>
+      </div>
+      <div class="cal-dow">
+        <span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="day-panel" id="day-panel">
+        <p class="hint">กดวันที่มีจุดสีเพื่อดูอัลบั้มของวันนั้น</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    คลังภาพกิจกรรมโรงเรียน · ภาพทั้งหมดจัดเก็บบน Google Drive
+  </footer>
+
+  <div id="toast" role="status"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
