@@ -3,7 +3,7 @@
  *  -----------------------------------------------
  *  ★ ตั้งค่าอย่างเดียวที่ต้องแก้: API_URL ด้านล่าง
  * ===================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyCAHt-GZpsoP-NXADVuNwrWp3Yov0DQmAfFvkQcZTqCPbvlMW-NWGsx5Qgb0maucbw/exec'; // เช่น https://script.google.com/macros/s/XXXX/exec
+const API_URL = 'วาง URL ของ GAS Web App ที่นี่'; // เช่น https://script.google.com/macros/s/XXXX/exec
 
 const THAI_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
                      'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -16,6 +16,7 @@ const state = {
   year: '',            // ปีการศึกษาที่เลือก
   keyword: '',         // คำค้นหา
   view: 'grid',        // grid | cal
+  sort: 'date-desc',   // date-desc | date-asc | views-desc | name-asc
   page: 1,             // หน้าปัจจุบันของมุมมองกริด
   calDate: new Date(), // เดือนที่ปฏิทินแสดงอยู่
   selectedDay: ''      // วันที่กดในปฏิทิน (yyyy-mm-dd)
@@ -77,11 +78,19 @@ function buildFilters() {
 
 /* ---------- กรองข้อมูลตาม state ---------- */
 function filtered() {
-  return state.albums.filter(a =>
+  const list = state.albums.filter(a =>
     (!state.category || a.category === state.category) &&
     (!state.year || a.year === state.year) &&
     (!state.keyword || a.name.toLowerCase().includes(state.keyword))
   );
+  const byDate = (a, b) => (a.date || '').localeCompare(b.date || '');
+  const sorters = {
+    'date-desc': (a, b) => -byDate(a, b),
+    'date-asc':  byDate,
+    'views-desc': (a, b) => (b.views || 0) - (a.views || 0),
+    'name-asc':  (a, b) => a.name.localeCompare(b.name, 'th')
+  };
+  return list.sort(sorters[state.sort] || sorters['date-desc']);
 }
 
 /* ---------- render หลัก ---------- */
@@ -123,13 +132,13 @@ function renderGrid() {
           `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>`
       : '';
     return `
-    <article class="album-card" tabindex="0" role="link"
-             aria-label="เปิดอัลบั้ม ${a.name}" data-id="${a.id}" data-folder="${a.folderId}"
-             data-slides="${previews.length}">
-      <div class="cover">
+    <article class="album-card" data-id="${a.id}" data-slides="${previews.length}">
+      <div class="cover" role="button" tabindex="0" data-act="preview" data-id="${a.id}"
+           aria-label="ดูรูปตัวอย่างของ ${a.name}">
         ${slides || '<div class="cover-empty"><i class="ti ti-photo"></i></div>'}
         <span class="count-badge">${a.photoCount} รูป</span>
         ${dots}
+        <span class="cover-hint"><i class="ti ti-zoom-in"></i> ดูตัวอย่าง</span>
       </div>
       <div class="card-body">
         <h3>${a.name}</h3>
@@ -137,7 +146,14 @@ function renderGrid() {
           <span><i class="ti ti-calendar"></i> ${thaiDate(a.date) || 'ไม่ระบุวันที่'}</span>
           ${a.category ? `<span class="cat-tag">${a.category}</span>` : ''}
         </div>
-        <span class="open-link">เปิดใน Google Drive <i class="ti ti-external-link"></i></span>
+        <div class="card-actions">
+          <button class="card-link" data-act="open" data-id="${a.id}" data-folder="${a.folderId}">
+            <i class="ti ti-external-link"></i> เปิดใน Drive
+          </button>
+          <button class="card-icon" data-act="share" data-id="${a.id}" aria-label="แชร์อัลบั้ม ${a.name}">
+            <i class="ti ti-share"></i>
+          </button>
+        </div>
       </div>
     </article>`;
   }).join('');
@@ -188,6 +204,77 @@ function goToPage(page) {
 function openAlbum(id, folderId) {
   fetch(`${API_URL}?action=view&id=${id}`).catch(() => {}); // นับยอด ไม่ต้องรอผล
   window.open(folderUrl(folderId), '_blank', 'noopener');
+}
+
+/* =====================================================
+ *  Lightbox — ดูรูปตัวอย่างในเว็บ (ใช้ coverIds ที่มีอยู่)
+ * ===================================================== */
+const lb = { album: null, i: 0 };
+
+function openLightbox(album) {
+  if (!album.coverIds.length) { openAlbum(album.id, album.folderId); return; }
+  lb.album = album;
+  lb.i = 0;
+  $('#lb-drive').href = folderUrl(album.folderId);
+  $('#lb-drive').onclick = () => { fetch(`${API_URL}?action=view&id=${album.id}`).catch(() => {}); };
+  $('#lightbox').hidden = false;
+  document.body.style.overflow = 'hidden';
+  showLbImage();
+}
+
+function showLbImage() {
+  const ids = lb.album.coverIds;
+  $('#lb-img').src = thumb(ids[lb.i], 1200);
+  $('#lb-img').alt = `${lb.album.name} รูปที่ ${lb.i + 1}`;
+  $('#lb-caption').textContent =
+    `${lb.album.name} — ตัวอย่าง ${lb.i + 1}/${ids.length} (จากทั้งหมด ${lb.album.photoCount} รูป)`;
+  const multi = ids.length > 1;
+  $('#lb-prev').style.visibility = multi ? 'visible' : 'hidden';
+  $('#lb-next').style.visibility = multi ? 'visible' : 'hidden';
+}
+
+function lbMove(delta) {
+  const n = lb.album.coverIds.length;
+  lb.i = (lb.i + delta + n) % n;
+  showLbImage();
+}
+
+function closeLightbox() {
+  $('#lightbox').hidden = true;
+  document.body.style.overflow = '';
+  $('#lb-img').src = '';
+}
+
+/* =====================================================
+ *  แชร์อัลบั้ม — ลิงก์ + QR (ลิงก์ตรงไปโฟลเดอร์ Drive)
+ * ===================================================== */
+function openShare(album) {
+  const url = folderUrl(album.folderId);
+  $('#share-name').textContent = album.name;
+  $('#share-url').value = url;
+  // ใช้บริการสร้าง QR แบบภาพ (ไม่ต้องมีไลบรารี)
+  $('#share-qr').src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  $('#share-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeShare() {
+  $('#share-modal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+async function copyShareUrl() {
+  const url = $('#share-url').value;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('คัดลอกลิงก์แล้ว');
+  } catch (err) {
+    // สำรอง: เลือกข้อความให้ผู้ใช้กด copy เอง
+    $('#share-url').select();
+    document.execCommand('copy');
+    toast('คัดลอกลิงก์แล้ว');
+  }
 }
 
 /* ===================== มุมมองปฏิทิน ===================== */
@@ -243,14 +330,17 @@ function renderDayPanel(events) {
   panel.innerHTML =
     `<h4>อัลบั้มวันที่ ${thaiDate(state.selectedDay)} (${list.length} อัลบั้ม)</h4>` +
     list.map(a => `
-      <div class="day-album" role="link" tabindex="0"
-           aria-label="เปิดอัลบั้ม ${a.name}" data-id="${a.id}" data-folder="${a.folderId}">
-        ${a.coverIds[0] ? `<img src="${thumb(a.coverIds[0], 200)}" alt="" loading="lazy">` : '<img alt="">'}
+      <div class="day-album">
+        <img src="${a.coverIds[0] ? thumb(a.coverIds[0], 200) : ''}" alt=""
+             role="button" tabindex="0" data-act="preview" data-id="${a.id}"
+             aria-label="ดูตัวอย่าง ${a.name}" loading="lazy">
         <div class="info">
           <b>${a.name}</b>
           <span>${a.category || ''} · ${a.photoCount} รูป</span>
         </div>
-        <span class="open-link">เปิด Drive <i class="ti ti-external-link"></i></span>
+        <button class="card-link" data-act="open" data-id="${a.id}" data-folder="${a.folderId}">
+          เปิด Drive <i class="ti ti-external-link"></i>
+        </button>
       </div>`).join('');
 }
 
@@ -286,6 +376,13 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
   });
 
+  // เรียงลำดับ
+  $('#sort-select').addEventListener('change', e => {
+    state.sort = e.target.value;
+    state.page = 1;
+    render();
+  });
+
   // แบ่งหน้า
   $('#pagination').addEventListener('click', e => {
     const btn = e.target.closest('.page-btn');
@@ -313,21 +410,50 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCalendar();
   });
 
-  // เปิดอัลบั้ม (ทั้งกริดและแผงวัน) — รองรับคีย์บอร์ดด้วย
+  // จัดการทุกปุ่มการ์ด/แผงวัน ผ่าน data-act
+  const dispatch = el => {
+    const act = el.dataset.act;
+    const album = state.albums.find(a => a.id === el.dataset.id);
+    if (!album) return;
+    if (act === 'preview') openLightbox(album);
+    else if (act === 'open') openAlbum(album.id, album.folderId);
+    else if (act === 'share') openShare(album);
+  };
   document.body.addEventListener('click', e => {
-    const el = e.target.closest('[data-folder]');
-    if (el) openAlbum(el.dataset.id, el.dataset.folder);
+    const el = e.target.closest('[data-act]');
+    if (el) dispatch(el);
   });
   document.body.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    const el = e.target.closest('[data-folder]');
-    if (el) openAlbum(el.dataset.id, el.dataset.folder);
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('[data-act]');
+    if (el) { e.preventDefault(); dispatch(el); return; }
     const day = e.target.closest('[data-date]');
     if (day) { state.selectedDay = day.dataset.date; renderCalendar(); }
   });
 
   // สไลด์ preview ตอน hover การ์ด (เฉพาะการ์ดที่มีรูปมากกว่า 1)
   setupHoverPreview();
+
+  // Lightbox
+  $('#lb-close').addEventListener('click', closeLightbox);
+  $('#lb-prev').addEventListener('click', () => lbMove(-1));
+  $('#lb-next').addEventListener('click', () => lbMove(1));
+  $('#lightbox').addEventListener('click', e => { if (e.target.id === 'lightbox') closeLightbox(); });
+
+  // Share
+  $('#share-close').addEventListener('click', closeShare);
+  $('#share-copy').addEventListener('click', copyShareUrl);
+  $('#share-modal').addEventListener('click', e => { if (e.target.id === 'share-modal') closeShare(); });
+
+  // คีย์ลัด: ปิดด้วย Esc, เลื่อนรูปด้วยลูกศรใน lightbox
+  document.addEventListener('keydown', e => {
+    if (!$('#lightbox').hidden) {
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') lbMove(-1);
+      else if (e.key === 'ArrowRight') lbMove(1);
+    }
+    if (!$('#share-modal').hidden && e.key === 'Escape') closeShare();
+  });
 });
 
 /* วนรูป preview ตอนเมาส์อยู่บนการ์ด และหยุด/รีเซ็ตเมื่อเมาส์ออก */
