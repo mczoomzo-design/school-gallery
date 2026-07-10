@@ -108,7 +108,7 @@ select.year-select {
 
 /* ---------- กริดอัลบั้ม ---------- */
 .album-grid {
-  display: grid; gap: 16px; padding: 18px 0 40px;
+  display: grid; gap: 16px; padding: 18px 0 24px;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 .album-card {
@@ -126,13 +126,31 @@ select.year-select {
   position: relative; aspect-ratio: 16 / 10;
   background: var(--navy-soft); overflow: hidden;
 }
-.cover img {
+.cover .slide {
+  position: absolute; inset: 0;
   width: 100%; height: 100%; object-fit: cover; display: block;
-  transition: transform .3s;
+  opacity: 0; transition: opacity .5s ease;
 }
-.album-card:hover .cover img { transform: scale(1.04); }
+.cover .slide.active { opacity: 1; }
+.album-card:hover .cover .slide.active { transform: scale(1.04); transition: opacity .5s ease, transform .3s; }
+.cover-empty {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 30px; opacity: .5;
+}
+.cover-dots {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 5px; z-index: 2;
+  opacity: 0; transition: opacity .2s;
+}
+.album-card:hover .cover-dots { opacity: 1; }
+.cover-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255, 255, 255, .55);
+  box-shadow: 0 0 2px rgba(0, 0, 0, .4); transition: background .2s;
+}
+.cover-dots span.on { background: #fff; }
 .count-badge {
-  position: absolute; top: 10px; right: 10px;
+  position: absolute; top: 10px; right: 10px; z-index: 2;
   background: rgba(255, 255, 255, .92); color: var(--text);
   font-size: 12px; font-weight: 500;
   padding: 3px 10px; border-radius: 999px;
@@ -381,4 +399,31 @@ select.year-select {
   .bulk-row > :nth-child(3) { grid-area: date; }
   .bulk-row > :nth-child(4) { grid-area: cat; }
   .bulk-row > :nth-child(5) { grid-area: year; }
+}
+
+/* =====================================================
+   แบ่งหน้า (Pagination)
+   ===================================================== */
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 6px; padding: 4px 0 40px;
+}
+.page-btn {
+  min-width: 38px; height: 38px; padding: 0 12px;
+  font: inherit; font-size: 14px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.page-btn:hover:not(:disabled) { border-color: var(--navy); color: var(--navy); background: var(--navy-soft); }
+.page-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+.page-btn:disabled { opacity: .4; cursor: default; }
+.page-gap { color: var(--muted); padding: 0 2px; }
+.page-info {
+  font-size: 13px; color: var(--muted); margin-left: 8px;
+  width: 100%; text-align: center; margin-top: 4px;
+}
+@media (min-width: 560px) {
+  .page-info { width: auto; margin-top: 0; }
 }
