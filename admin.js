@@ -192,6 +192,18 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-add').addEventListener('click', addAlbum);
   $('#btn-scan-parent').addEventListener('click', scanParentFolder);
 
+  // ฟอร์มเพิ่มทีละอัน: ถ้าชื่อกิจกรรมมีวันที่ติดมา (เช่น "65-05-18 กีฬาสี")
+  // → เติมวันที่ + ปีการศึกษาให้อัตโนมัติ และตัดวันที่ออกจากชื่อ
+  $('#f-name').addEventListener('blur', () => {
+    const found = findDateInName($('#f-name').value);
+    if (!found) return;
+    if (!$('#f-date').value) $('#f-date').value = found.iso;
+    if (!$('#f-year').value) $('#f-year').value = academicYear(found.iso);
+    $('#f-name').value = $('#f-name').value
+      .replace(found.text, '').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '').trim();
+    toast('เติมวันที่และปีการศึกษาจากชื่อให้แล้ว');
+  });
+
   $('#album-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
@@ -240,24 +252,11 @@ function parseFolderName(rawName, createdDate) {
     name = name.replace(catMatch[0], '').trim();
   }
 
-  // 2) วันที่จากชื่อ — รองรับ พ.ศ./ค.ศ. หลายรูปแบบ
-  const patterns = [
-    { re: /(25\d{2}|20\d{2})[-_./](\d{1,2})[-_./](\d{1,2})/, order: 'ymd' }, // 2569-06-12
-    { re: /(\d{1,2})[-_./](\d{1,2})[-_./](25\d{2}|20\d{2})/, order: 'dmy' }, // 12-06-2569
-    { re: /(25\d{2}|20\d{2})(\d{2})(\d{2})(?!\d)/,           order: 'ymd' }  // 25690612
-  ];
-  for (const p of patterns) {
-    const m = name.match(p.re);
-    if (!m) continue;
-    let y, mo, d;
-    if (p.order === 'ymd') { y = +m[1]; mo = +m[2]; d = +m[3]; }
-    else                   { y = +m[3]; mo = +m[2]; d = +m[1]; }
-    if (y > 2400) y -= 543; // แปลง พ.ศ. → ค.ศ.
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-      date = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      name = name.replace(m[0], '').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '').trim();
-      break;
-    }
+  // 2) วันที่จากชื่อ — รองรับปี 4 หลัก (พ.ศ./ค.ศ.) และปี พ.ศ. 2 หลัก เช่น 65-05-18
+  const found = findDateInName(name);
+  if (found) {
+    date = found.iso;
+    name = name.replace(found.text, '').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '').trim();
   }
   if (!date) date = createdDate; // ไม่มีในชื่อ → ใช้วันที่สร้างโฟลเดอร์แทน
 
@@ -270,6 +269,60 @@ function parseFolderName(rawName, createdDate) {
   if (!category) category = 'ทั่วไป';
 
   return { name: name || rawName, date, category, year: academicYear(date) };
+}
+
+/* ---------- หาวันที่ในข้อความ ---------- */
+/* รองรับ:
+ *   ปี 4 หลัก:  2569-06-12, 12-06-2569, 20260612 (พ.ศ. หรือ ค.ศ. ก็ได้)
+ *   ปี 2 หลัก:  65-05-18 (= 18 พ.ค. พ.ศ. 2565), 18-05-65, 650518
+ *   ★ ปี 2 หลักถือเป็น พ.ศ. เสมอ และระบบแปลงเป็น ค.ศ. ให้ตอนบันทึก
+ *   คั่นด้วย - _ . / ได้ทั้งหมด
+ */
+function findDateInName(str) {
+  // --- ปี 4 หลัก ---
+  const four = [
+    { re: /(25\d{2}|20\d{2})[-_./](\d{1,2})[-_./](\d{1,2})/, order: 'ymd' }, // 2569-06-12
+    { re: /(\d{1,2})[-_./](\d{1,2})[-_./](25\d{2}|20\d{2})/, order: 'dmy' }, // 12-06-2569
+    { re: /(25\d{2}|20\d{2})(\d{2})(\d{2})(?!\d)/,           order: 'ymd' }  // 25690612
+  ];
+  for (const p of four) {
+    const m = str.match(p.re);
+    if (!m) continue;
+    let y, mo, d;
+    if (p.order === 'ymd') { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else                   { y = +m[3]; mo = +m[2]; d = +m[1]; }
+    if (y > 2400) y -= 543; // พ.ศ. → ค.ศ.
+    const iso = validDate(y, mo, d);
+    if (iso) return { iso, text: m[0] };
+  }
+
+  // --- ปี พ.ศ. 2 หลัก มีตัวคั่น เช่น 65-05-18 หรือ 18-05-65 ---
+  const m2 = str.match(/(^|\D)(\d{1,2})[-_./](\d{1,2})[-_./](\d{1,2})(?!\d)/);
+  if (m2) {
+    const a = +m2[2], b = +m2[3], c = +m2[4];
+    let y = 0, mo = 0, d = 0;
+    if (a > 31)      { y = a; mo = b; d = c; } // ตัวแรกเกิน 31 → เป็นปีแน่ (yy-mm-dd)
+    else if (c > 31) { y = c; mo = b; d = a; } // ตัวท้ายเกิน 31 → ปีอยู่ท้าย (dd-mm-yy)
+    // ถ้าทุกตัวไม่เกิน 31 = ไม่มีปีที่สมเหตุสมผล (พ.ศ. 25xx ปัจจุบันคือ 40 ขึ้นไป) → ข้าม
+    if (y) {
+      const iso = validDate(y + 2500 - 543, mo, d); // พ.ศ. 25yy → ค.ศ.
+      if (iso) return { iso, text: m2[0].replace(/^\D/, '') };
+    }
+  }
+
+  // --- ปี พ.ศ. 2 หลัก ติดกัน 6 หลัก เช่น 650518 (ปีต้อง 40 ขึ้นไป กันจับเลขอื่นมั่ว) ---
+  const m3 = str.match(/(^|\D)([4-9]\d)(\d{2})(\d{2})(?!\d)/);
+  if (m3) {
+    const iso = validDate(+m3[2] + 2500 - 543, +m3[3], +m3[4]);
+    if (iso) return { iso, text: m3[0].replace(/^\D/, '') };
+  }
+
+  return null;
+}
+
+function validDate(y, mo, d) {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
 /* ปีการศึกษาไทย: พ.ค.–เม.ย. (ม.ค.–เม.ย. นับเป็นปีการศึกษาก่อนหน้า) */
