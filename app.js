@@ -191,6 +191,12 @@ const isoOf = d =>
 document.addEventListener('DOMContentLoaded', () => {
   loadAlbums();
 
+  // ค้นหาใบหน้า
+  $('#btn-face').addEventListener('click', openFaceSearch);
+  $('#face-close').addEventListener('click', closeFaceSearch);
+  $('#btn-capture').addEventListener('click', captureAndSearch);
+  $('#btn-retry').addEventListener('click', () => { showFaceStep('cam'); startCamera(); });
+
   // ค้นหา
   $('#search').addEventListener('input', e => {
     state.keyword = e.target.value.trim().toLowerCase();
@@ -261,4 +267,212 @@ function shiftMonth(delta) {
   state.calDate = new Date(state.calDate.getFullYear(), state.calDate.getMonth() + delta, 1);
   state.selectedDay = '';
   renderCalendar();
+}
+
+/* =====================================================
+ *  ระบบค้นหาใบหน้า (Face Search)
+ *  -----------------------------------------------
+ *  หลักการ: รูปเซลฟี่ประมวลผลในเครื่องด้วย face-api.js
+ *  แล้วเทียบกับ "ดัชนีใบหน้า" ที่ผู้ดูแลสร้างไว้ล่วงหน้า
+ *  (ตัวเลข 128 ตัวต่อใบหน้า — ไม่มีการส่งรูปขึ้นระบบ)
+ * ===================================================== */
+const FACEAPI_JS  = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.min.js';
+const MODEL_URL   = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
+const MATCH_THRESHOLD = 0.6; // ค่าเดิมที่จูนไว้: ระยะต่ำกว่านี้ = คนเดียวกัน
+
+let faceReady = false;
+let camStream = null;
+
+/* ---------- โหลด face-api.js + โมเดล แบบ lazy (โหลดเมื่อกดใช้เท่านั้น) ---------- */
+async function loadFaceApi() {
+  if (faceReady) return;
+  if (!window.faceapi) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = FACEAPI_JS;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('โหลดไลบรารี AI ไม่สำเร็จ'));
+      document.head.appendChild(s);
+    });
+  }
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+  ]);
+  faceReady = true;
+}
+
+/* ---------- ควบคุมขั้นตอนใน modal ---------- */
+function showFaceStep(step) {
+  ['load', 'cam', 'search', 'results'].forEach(s => {
+    document.querySelector('#fs-' + s).hidden = (s !== step);
+  });
+}
+
+async function openFaceSearch() {
+  $('#face-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  showFaceStep('load');
+  try {
+    await loadFaceApi();
+    showFaceStep('cam');
+    await startCamera();
+  } catch (err) {
+    closeFaceSearch();
+    toast(String(err.message || err), true);
+  }
+}
+
+function closeFaceSearch() {
+  stopCamera();
+  $('#face-modal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+/* ---------- กล้อง (pattern ที่ยืนยันแล้ว: facingMode user + playsinline) ---------- */
+async function startCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 720 } },
+      audio: false
+    });
+    $('#face-video').srcObject = camStream;
+  } catch (err) {
+    closeFaceSearch();
+    if (err.name === 'NotAllowedError') {
+      toast('กรุณาอนุญาตให้เว็บใช้กล้องในการตั้งค่าเบราว์เซอร์', true);
+    } else if (err.name === 'NotFoundError') {
+      toast('ไม่พบกล้องในอุปกรณ์นี้', true);
+    } else {
+      toast('เปิดกล้องไม่ได้: ' + err.name, true);
+    }
+  }
+}
+
+function stopCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+  }
+}
+
+/* ---------- ถ่ายรูป → คำนวณ descriptor → ค้นหา ---------- */
+async function captureAndSearch() {
+  const video = $('#face-video');
+  if (!video.videoWidth) return toast('กล้องยังไม่พร้อม ลองอีกครั้ง', true);
+
+  // วาดภาพจากวิดีโอลง canvas (อยู่ในเครื่องทั้งหมด)
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  stopCamera();
+
+  showFaceStep('search');
+  $('#search-status').textContent = 'กำลังวิเคราะห์ใบหน้า…';
+  setProgress(0);
+
+  const detection = await faceapi
+    .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (!detection) {
+    showFaceStep('cam');
+    startCamera();
+    return toast('ไม่พบใบหน้าในภาพ ลองถ่ายใหม่ในที่แสงสว่างกว่านี้', true);
+  }
+
+  await searchInIndex(detection.descriptor);
+}
+
+/* ---------- เทียบกับดัชนีทีละอัลบั้ม (ตามตัวกรองหมวด/ปีที่เลือกอยู่) ---------- */
+async function searchInIndex(myDesc) {
+  const targets = state.albums.filter(a =>
+    (!state.category || a.category === state.category) &&
+    (!state.year || a.year === state.year)
+  );
+
+  const matches = [];        // { album, fileId, dist }
+  const noIndexAlbums = [];  // อัลบั้มที่ยังไม่มีดัชนี
+
+  for (let i = 0; i < targets.length; i++) {
+    const album = targets[i];
+    $('#search-status').textContent =
+      `กำลังค้นหาในอัลบั้ม "${album.name}" (${i + 1}/${targets.length})`;
+    setProgress((i / targets.length) * 100);
+
+    try {
+      const res = await fetch(`${API_URL}?action=getFaceIndex&albumId=${album.id}`);
+      const data = await res.json();
+      if (!data.ok || !data.rows.length) {
+        if (album.photoCount > 0) noIndexAlbums.push(album.name);
+        continue;
+      }
+      data.rows.forEach(row => {
+        let best = Infinity;
+        row.d.forEach(desc => {
+          const dist = euclidean(myDesc, desc);
+          if (dist < best) best = dist;
+        });
+        if (best < MATCH_THRESHOLD) matches.push({ album, fileId: row.f, dist: best });
+      });
+    } catch (err) { /* อัลบั้มนี้โหลดไม่ได้ ข้ามไป */ }
+  }
+
+  setProgress(100);
+  renderFaceResults(matches, noIndexAlbums, targets.length);
+}
+
+function euclidean(a, b) {
+  let sum = 0;
+  for (let i = 0; i < 128; i++) {
+    const d = a[i] - b[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+/* ---------- แสดงผลลัพธ์ จัดกลุ่มตามอัลบั้ม ---------- */
+function renderFaceResults(matches, noIndexAlbums, searchedCount) {
+  showFaceStep('results');
+
+  if (!matches.length) {
+    $('#result-summary').innerHTML =
+      `<i class="ti ti-mood-sad"></i> ไม่พบรูปของคุณจาก ${searchedCount} อัลบั้มที่ค้นหา`;
+    $('#result-groups').innerHTML = '';
+  } else {
+    // จัดกลุ่มตามอัลบั้ม เรียงรูปตามความใกล้เคียง
+    const groups = {};
+    matches.forEach(m => {
+      (groups[m.album.id] = groups[m.album.id] || { album: m.album, items: [] }).items.push(m);
+    });
+    $('#result-summary').innerHTML =
+      `<i class="ti ti-check"></i> พบรูปของคุณ ${matches.length} รูป จาก ${Object.keys(groups).length} อัลบั้ม`;
+    $('#result-groups').innerHTML = Object.values(groups).map(g => `
+      <div class="result-group">
+        <h4>${g.album.name}
+          <a href="${folderUrl(g.album.folderId)}" target="_blank" rel="noopener">
+            เปิดทั้งอัลบั้ม <i class="ti ti-external-link"></i>
+          </a>
+        </h4>
+        <div class="result-grid">
+          ${g.items.sort((a, b) => a.dist - b.dist).map(m => `
+            <a href="https://drive.google.com/file/d/${m.fileId}/view" target="_blank" rel="noopener">
+              <img src="${thumb(m.fileId, 400)}" alt="รูปที่พบใน ${g.album.name}" loading="lazy">
+            </a>`).join('')}
+        </div>
+      </div>`).join('');
+  }
+
+  $('#result-note').textContent = noIndexAlbums.length
+    ? `หมายเหตุ: อัลบั้ม "${noIndexAlbums.slice(0, 3).join('", "')}"` +
+      `${noIndexAlbums.length > 3 ? ` และอีก ${noIndexAlbums.length - 3} อัลบั้ม` : ''}` +
+      ` ยังไม่ได้สร้างดัชนีใบหน้า จึงไม่ถูกรวมในการค้นหา`
+    : '';
+}
+
+function setProgress(pct) {
+  $('#search-progress').style.width = pct + '%';
 }

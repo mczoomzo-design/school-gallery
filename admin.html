@@ -85,6 +85,26 @@
       </button>
     </section>
 
+    <!-- นำเข้าหลายอัลบั้มจากโฟลเดอร์ใหญ่ -->
+    <section class="admin-section">
+      <h3><i class="ti ti-folder-down"></i> นำเข้าหลายอัลบั้มจากโฟลเดอร์ใหญ่</h3>
+      <p class="section-hint">
+        วางลิงก์โฟลเดอร์ใหญ่ที่ข้างในมีโฟลเดอร์ย่อยของแต่ละกิจกรรม (1 โฟลเดอร์ย่อย = 1 อัลบั้ม)
+        ระบบจะอ่านชื่อกิจกรรม วันที่ หมวดหมู่ และปีการศึกษาให้อัตโนมัติ ตรวจแก้ได้ก่อนกดนำเข้า
+        — ตั้งชื่อโฟลเดอร์แบบ <code>2569-06-12 กีฬาสี [กีฬา]</code> จะแม่นที่สุด
+      </p>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="b-url">ลิงก์โฟลเดอร์ใหญ่</label>
+          <input id="b-url" placeholder="https://drive.google.com/drive/folders/...">
+        </div>
+      </div>
+      <button class="btn" id="btn-scan-parent">
+        <i class="ti ti-search"></i> สแกนโฟลเดอร์ย่อย
+      </button>
+      <div id="bulk-preview"></div>
+    </section>
+
     <!-- รายการอัลบั้มทั้งหมด -->
     <section class="admin-section">
       <h3><i class="ti ti-photo"></i> อัลบั้มทั้งหมด <span id="album-count" style="color:var(--muted); font-weight:400;"></span></h3>
