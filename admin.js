@@ -107,9 +107,6 @@ function renderList(albums) {
         <span>${thaiDate(a.date)} · ${a.category || 'ไม่มีหมวด'} · ${a.photoCount} รูป · ${a.views} วิว</span>
       </div>
       <div class="actions">
-        <button class="btn sm" data-act="index" title="สร้างดัชนีใบหน้าสำหรับระบบค้นหารูปตัวเอง">
-          <i class="ti ti-face-id"></i> ดัชนีใบหน้า
-        </button>
         <button class="btn sm" data-act="rescan" title="สแกนรูปในโฟลเดอร์ใหม่">
           <i class="ti ti-refresh"></i> สแกนใหม่
         </button>
@@ -181,9 +178,6 @@ async function handleRowAction(id, act) {
     const data = await api({ action: 'rescanAlbum', id });
     toast(data.ok ? `สแกนเสร็จ พบรูปทั้งหมด ${data.photoCount} รูป` : data.error, !data.ok);
   }
-  if (act === 'index') {
-    return indexAlbum(id); // มี flow ของตัวเอง ไม่ต้อง reload ทันที
-  }
   loadAlbums();
 }
 
@@ -205,121 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
     handleRowAction(row.dataset.id, btn.dataset.act);
   });
 });
-
-/* =====================================================
- *  สร้างดัชนีใบหน้า (Face Indexing)
- *  -----------------------------------------------
- *  เบราว์เซอร์ของครูทำหน้าที่สแกน: โหลดรูปทีละใบ
- *  → ตรวจจับใบหน้าทั้งหมด → สกัด descriptor (128 ตัวเลข)
- *  → ส่งขึ้น GAS เป็นชุด ชุดละ 10 รูป
- *  สแกนเฉพาะรูปที่ยังไม่มีในดัชนี — ทำต่อจากเดิมได้เสมอ
- * ===================================================== */
-const FACEAPI_JS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.min.js';
-const MODEL_URL  = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
-const BATCH_SIZE = 10;
-
-let faceReady = false;
-let indexing = false; // กันกดซ้ำระหว่างสแกน
-
-async function loadFaceApi() {
-  if (faceReady) return;
-  if (!window.faceapi) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = FACEAPI_JS;
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('โหลดไลบรารี AI ไม่สำเร็จ'));
-      document.head.appendChild(s);
-    });
-  }
-  await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-  ]);
-  faceReady = true;
-}
-
-/* โหลดรูปจาก Drive thumbnail เข้า Image element (ต้องมี crossOrigin) */
-function loadImage(fileId) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    const timer = setTimeout(() => reject(new Error('timeout')), 20000);
-    img.onload = () => { clearTimeout(timer); resolve(img); };
-    img.onerror = () => { clearTimeout(timer); reject(new Error('load failed')); };
-    img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
-  });
-}
-
-async function indexAlbum(id) {
-  if (indexing) return toast('กำลังสแกนอัลบั้มอื่นอยู่ รอให้เสร็จก่อน', true);
-  const album = window._albums[id];
-  const btn = document.querySelector(`.album-row[data-id="${id}"] [data-act="index"]`);
-  indexing = true;
-  btn.disabled = true;
-
-  try {
-    // 1) โหลดโมเดล AI
-    btn.innerHTML = '<i class="ti ti-loader-2"></i> โหลดโมเดล…';
-    await loadFaceApi();
-
-    // 2) ขอรายชื่อไฟล์ทั้งหมด + ไฟล์ที่ทำดัชนีแล้ว
-    btn.innerHTML = '<i class="ti ti-loader-2"></i> อ่านรายชื่อไฟล์…';
-    const listing = await api({ action: 'listAlbumFiles', id });
-    if (!listing.ok) throw new Error(listing.error);
-
-    const done = new Set(listing.indexed);
-    const pending = listing.files.filter(f => !done.has(f));
-
-    if (!pending.length) {
-      toast(`อัลบั้ม "${album.name}" มีดัชนีครบทุกรูปแล้ว (${listing.files.length} รูป)`);
-      return;
-    }
-    if (!confirm(`สร้างดัชนีใบหน้าอัลบั้ม "${album.name}"\n` +
-                 `ต้องสแกน ${pending.length} รูป (จากทั้งหมด ${listing.files.length} รูป)\n` +
-                 `ใช้เวลาประมาณ ${Math.ceil(pending.length * 1.5 / 60)} นาที — เปิดหน้านี้ค้างไว้ระหว่างสแกน`)) return;
-
-    // 3) สแกนทีละรูป ส่งเป็นชุด
-    const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 });
-    let batch = [];
-    let scanned = 0, facesFound = 0;
-
-    for (const fileId of pending) {
-      let desc = []; // รูปที่โหลดไม่ได้/ไม่มีหน้า → บันทึกว่าง (ถือว่าสแกนแล้ว)
-      try {
-        const img = await loadImage(fileId);
-        const detections = await faceapi.detectAllFaces(img, opts)
-          .withFaceLandmarks().withFaceDescriptors();
-        desc = detections.map(d =>
-          Array.from(d.descriptor).map(v => Math.round(v * 1000) / 1000));
-        facesFound += desc.length;
-      } catch (err) { /* ข้ามรูปที่มีปัญหา */ }
-
-      batch.push({ fileId, desc });
-      scanned++;
-      btn.innerHTML = `<i class="ti ti-loader-2"></i> สแกน ${scanned}/${pending.length} (พบ ${facesFound} หน้า)`;
-
-      if (batch.length >= BATCH_SIZE) {
-        const save = await api({ action: 'saveFaceIndex', albumId: id, rows: batch });
-        if (!save.ok) throw new Error(save.error);
-        batch = [];
-      }
-    }
-    if (batch.length) {
-      const save = await api({ action: 'saveFaceIndex', albumId: id, rows: batch });
-      if (!save.ok) throw new Error(save.error);
-    }
-
-    toast(`สร้างดัชนีเสร็จ: สแกน ${scanned} รูป พบ ${facesFound} ใบหน้า`);
-  } catch (err) {
-    toast('สแกนไม่สำเร็จ: ' + (err.message || err) + ' — กดปุ่มเดิมเพื่อสแกนต่อจากที่ค้างได้', true);
-  } finally {
-    indexing = false;
-    btn.disabled = false;
-    btn.innerHTML = '<i class="ti ti-face-id"></i> ดัชนีใบหน้า';
-  }
-}
 
 /* =====================================================
  *  นำเข้าหลายอัลบั้มจากโฟลเดอร์ใหญ่ (Bulk Import)

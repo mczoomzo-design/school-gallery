@@ -35,15 +35,6 @@
         <i class="ti ti-search icon"></i>
         <input type="search" id="search" placeholder="ค้นหากิจกรรม เช่น กีฬาสี วันไหว้ครู">
       </div>
-
-      <button class="face-banner" id="btn-face">
-        <span class="face-icon"><i class="ti ti-face-id"></i></span>
-        <span class="face-text">
-          <b>ค้นหารูปตัวเอง</b>
-          <small>ถ่ายเซลฟี่ แล้วระบบจะหารูปที่มีคุณจากทุกอัลบั้ม — รูปของคุณไม่ถูกส่งขึ้นระบบ</small>
-        </span>
-        <i class="ti ti-chevron-right"></i>
-      </button>
       <div class="filter-row">
         <div class="chips" id="chips"></div>
         <select class="year-select" id="year-select">
@@ -87,55 +78,6 @@
   <footer class="site-footer">
     คลังภาพกิจกรรมโรงเรียน · ภาพทั้งหมดจัดเก็บบน Google Drive
   </footer>
-
-  <!-- ===== Modal ค้นหาใบหน้า ===== -->
-  <div class="modal" id="face-modal" hidden>
-    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="face-title">
-      <div class="modal-head">
-        <h3 id="face-title"><i class="ti ti-face-id"></i> ค้นหารูปตัวเอง</h3>
-        <button class="modal-close" id="face-close" aria-label="ปิด"><i class="ti ti-x"></i></button>
-      </div>
-
-      <!-- ขั้นโหลดโมเดล -->
-      <div class="face-step" id="fs-load">
-        <div class="spinner"></div>
-        <p>กำลังโหลดโมเดล AI ครั้งแรกอาจใช้เวลาสักครู่…</p>
-      </div>
-
-      <!-- ขั้นถ่ายรูป -->
-      <div class="face-step" id="fs-cam" hidden>
-        <div class="cam-frame">
-          <video id="face-video" autoplay playsinline muted></video>
-        </div>
-        <p class="face-hint">จัดใบหน้าให้อยู่กลางกรอบ ในที่ที่มีแสงสว่างเพียงพอ</p>
-        <button class="btn primary block" id="btn-capture">
-          <i class="ti ti-camera"></i> ถ่ายและค้นหา
-        </button>
-      </div>
-
-      <!-- ขั้นกำลังค้นหา -->
-      <div class="face-step" id="fs-search" hidden>
-        <div class="spinner"></div>
-        <p id="search-status">กำลังวิเคราะห์ใบหน้า…</p>
-        <div class="progress"><div class="progress-fill" id="search-progress"></div></div>
-      </div>
-
-      <!-- ขั้นผลลัพธ์ -->
-      <div class="face-step" id="fs-results" hidden>
-        <p id="result-summary" class="result-summary"></p>
-        <div id="result-groups"></div>
-        <p id="result-note" class="face-hint"></p>
-        <button class="btn block" id="btn-retry">
-          <i class="ti ti-camera-rotate"></i> ถ่ายใหม่อีกครั้ง
-        </button>
-      </div>
-
-      <p class="privacy-note">
-        <i class="ti ti-shield-check"></i>
-        รูปเซลฟี่ประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกอัปโหลดหรือบันทึกที่ใด
-      </p>
-    </div>
-  </div>
 
   <div id="toast" role="status"></div>
 
