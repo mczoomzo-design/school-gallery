@@ -95,6 +95,7 @@ function filtered() {
 
 /* ---------- render หลัก ---------- */
 function render() {
+  renderFeatured();
   $('#view-grid').hidden = state.view !== 'grid';
   $('#view-cal').hidden = state.view !== 'cal';
   if (state.view === 'grid') renderGrid();
@@ -131,14 +132,15 @@ function renderGrid() {
       ? `<div class="cover-dots">${previews.map((_, i) =>
           `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>`
       : '';
+    const liked = isLiked(a.id);
     return `
-    <article class="album-card" tabindex="0" role="link"
-             aria-label="เปิดอัลบั้ม ${a.name}" data-act="open" data-id="${a.id}"
-             data-folder="${a.folderId}" data-slides="${previews.length}">
-      <div class="cover">
+    <article class="album-card" data-id="${a.id}" data-slides="${previews.length}">
+      <div class="cover" role="button" tabindex="0" data-act="view" data-id="${a.id}"
+           aria-label="ดูรูปทั้งหมดของ ${a.name}">
         ${slides || '<div class="cover-empty"><i class="ti ti-photo"></i></div>'}
         <span class="count-badge">${a.photoCount} รูป</span>
         ${dots}
+        <span class="cover-hint"><i class="ti ti-photo"></i> ดูรูปในเว็บ</span>
       </div>
       <div class="card-body">
         <h3>${a.name}</h3>
@@ -146,7 +148,16 @@ function renderGrid() {
           <span><i class="ti ti-calendar"></i> ${thaiDate(a.date) || 'ไม่ระบุวันที่'}</span>
           ${a.category ? `<span class="cat-tag">${a.category}</span>` : ''}
         </div>
-        <span class="open-link">เปิดใน Google Drive <i class="ti ti-external-link"></i></span>
+        <div class="card-actions">
+          <button class="like-btn${liked ? ' liked' : ''}" data-act="like" data-id="${a.id}"
+                  aria-label="ถูกใจ ${a.name}" aria-pressed="${liked}">
+            <i class="ti ti-heart${liked ? '-filled' : ''}"></i>
+            <span class="like-count" data-like-count="${a.id}">${a.likes || 0}</span>
+          </button>
+          <button class="card-link" data-act="open" data-id="${a.id}" data-folder="${a.folderId}">
+            <i class="ti ti-external-link"></i> เปิด Drive
+          </button>
+        </div>
       </div>
     </article>`;
   }).join('');
@@ -197,6 +208,131 @@ function goToPage(page) {
 function openAlbum(id, folderId) {
   fetch(`${API_URL}?action=view&id=${id}`).catch(() => {}); // นับยอด ไม่ต้องรอผล
   window.open(folderUrl(folderId), '_blank', 'noopener');
+}
+
+/* =====================================================
+ *  แบนเนอร์รูปเด่นประจำสัปดาห์ (อัลบั้มที่ครูปักหมุด)
+ * ===================================================== */
+function renderFeatured() {
+  const featured = state.albums.filter(a => a.featured);
+  const el = $('#featured-banner');
+  if (!featured.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="fb-label"><i class="ti ti-star-filled"></i> อัลบั้มแนะนำ</div>
+    <div class="fb-track">
+      ${featured.map(a => `
+        <div class="fb-card" role="button" tabindex="0" data-act="view" data-id="${a.id}"
+             aria-label="ดูรูป ${a.name}">
+          <img src="${a.coverIds[0] ? thumb(a.coverIds[0], 800) : ''}" alt="" loading="lazy">
+          <div class="fb-info">
+            <b>${a.name}</b>
+            <span>${thaiDate(a.date) || ''} · ${a.photoCount} รูป</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+/* =====================================================
+ *  ปุ่มถูกใจ — เก็บสถานะว่าเคยกดไว้ใน localStorage กันกดซ้ำ
+ * ===================================================== */
+function likedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem('gh_liked') || '[]')); }
+  catch (err) { return new Set(); }
+}
+function isLiked(id) { return likedSet().has(id); }
+
+function toggleLike(album, btn) {
+  const set = likedSet();
+  const liked = set.has(album.id);
+  const dir = liked ? 'down' : 'up';
+  // อัปเดต UI ทันที (optimistic)
+  const countEl = btn.querySelector('.like-count');
+  const icon = btn.querySelector('i');
+  let n = Number(countEl.textContent) || 0;
+  n = liked ? Math.max(0, n - 1) : n + 1;
+  countEl.textContent = n;
+  btn.classList.toggle('liked', !liked);
+  btn.setAttribute('aria-pressed', String(!liked));
+  icon.className = `ti ti-heart${!liked ? '-filled' : ''}`;
+  // บันทึกสถานะ + อัปเดตข้อมูลในหน่วยความจำ
+  if (liked) set.delete(album.id); else set.add(album.id);
+  localStorage.setItem('gh_liked', JSON.stringify([...set]));
+  album.likes = n;
+  // ยิงไปเซิร์ฟเวอร์ (ไม่ต้องรอผล)
+  fetch(`${API_URL}?action=like&id=${album.id}&dir=${dir}`).catch(() => {});
+}
+
+/* =====================================================
+ *  หน้าดูรูปทั้งอัลบั้มในเว็บ
+ * ===================================================== */
+const viewer = { album: null, fileIds: [] };
+
+async function openViewer(album) {
+  viewer.album = album;
+  viewer.fileIds = [];
+  fetch(`${API_URL}?action=view&id=${album.id}`).catch(() => {}); // นับยอดชม
+  $('#viewer-name').textContent = album.name;
+  $('#viewer-meta').textContent =
+    `${thaiDate(album.date) || ''} · ${album.category || ''} · ${album.photoCount} รูป`;
+  $('#viewer-drive').href = folderUrl(album.folderId);
+  $('#viewer-grid').innerHTML = '';
+  $('#viewer-loading').hidden = false;
+  $('#viewer').hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const res = await fetch(`${API_URL}?action=getAlbumFiles&id=${album.id}`);
+    const data = await res.json();
+    $('#viewer-loading').hidden = true;
+    if (!data.ok || !data.fileIds.length) {
+      $('#viewer-grid').innerHTML =
+        `<div class="empty"><i class="ti ti-photo-off"></i>โหลดรูปไม่ได้ ลองเปิดใน Drive แทน</div>`;
+      return;
+    }
+    viewer.fileIds = data.fileIds;
+    $('#viewer-grid').innerHTML = data.fileIds.map((id, i) =>
+      `<div class="v-thumb" data-idx="${i}" role="button" tabindex="0" aria-label="ดูรูปที่ ${i + 1}">
+         <img src="${thumb(id, 400)}" alt="รูปที่ ${i + 1}" loading="lazy">
+       </div>`).join('');
+  } catch (err) {
+    $('#viewer-loading').hidden = true;
+    $('#viewer-grid').innerHTML =
+      `<div class="empty"><i class="ti ti-plug-x"></i>เชื่อมต่อไม่ได้ ลองใหม่ภายหลัง</div>`;
+  }
+}
+
+function closeViewer() {
+  $('#viewer').hidden = true;
+  document.body.style.overflow = '';
+  viewer.fileIds = [];
+}
+
+/* ---------- ดูรูปเดี่ยวเต็มจอ ---------- */
+const pf = { i: 0 };
+
+function openPhotoFull(idx) {
+  pf.i = idx;
+  showPhotoFull();
+  $('#photo-full').hidden = false;
+}
+function showPhotoFull() {
+  const ids = viewer.fileIds;
+  $('#pf-img').src = thumb(ids[pf.i], 1600);
+  $('#pf-img').alt = `รูปที่ ${pf.i + 1}`;
+  $('#pf-count').textContent = `${pf.i + 1} / ${ids.length}`;
+  const multi = ids.length > 1;
+  $('#pf-prev').style.visibility = multi ? 'visible' : 'hidden';
+  $('#pf-next').style.visibility = multi ? 'visible' : 'hidden';
+}
+function pfMove(delta) {
+  const n = viewer.fileIds.length;
+  pf.i = (pf.i + delta + n) % n;
+  showPhotoFull();
+}
+function closePhotoFull() {
+  $('#photo-full').hidden = true;
+  $('#pf-img').src = '';
 }
 
 /* ===================== มุมมองปฏิทิน ===================== */
@@ -329,9 +465,14 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCalendar();
   });
 
-  // เปิดอัลบั้ม (ทั้งกริดและแผงวัน) — รองรับคีย์บอร์ดด้วย
+  // จัดการปุ่มการ์ด/แผงวัน ผ่าน data-act
   const dispatch = el => {
-    if (el.dataset.act === 'open') openAlbum(el.dataset.id, el.dataset.folder);
+    const act = el.dataset.act;
+    const album = state.albums.find(a => a.id === el.dataset.id);
+    if (!album) return;
+    if (act === 'open') openAlbum(album.id, album.folderId);
+    else if (act === 'view') openViewer(album);
+    else if (act === 'like') toggleLike(album, el);
   };
   document.body.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
@@ -347,6 +488,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // สไลด์ preview ตอน hover การ์ด (เฉพาะการ์ดที่มีรูปมากกว่า 1)
   setupHoverPreview();
+
+  // หน้าดูรูปทั้งอัลบั้ม
+  $('#viewer-close').addEventListener('click', closeViewer);
+  $('#viewer-grid').addEventListener('click', e => {
+    const cell = e.target.closest('[data-idx]');
+    if (cell) openPhotoFull(+cell.dataset.idx);
+  });
+
+  // ดูรูปเดี่ยวเต็มจอ
+  $('#pf-close').addEventListener('click', closePhotoFull);
+  $('#pf-prev').addEventListener('click', () => pfMove(-1));
+  $('#pf-next').addEventListener('click', () => pfMove(1));
+
+  // คีย์ลัด
+  document.addEventListener('keydown', e => {
+    if (!$('#photo-full').hidden) {
+      if (e.key === 'Escape') closePhotoFull();
+      else if (e.key === 'ArrowLeft') pfMove(-1);
+      else if (e.key === 'ArrowRight') pfMove(1);
+    } else if (!$('#viewer').hidden && e.key === 'Escape') closeViewer();
+  });
 });
 
 /* วนรูป preview ตอนเมาส์อยู่บนการ์ด และหยุด/รีเซ็ตเมื่อเมาส์ออก */

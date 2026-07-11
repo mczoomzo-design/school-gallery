@@ -4,7 +4,7 @@
  *  ★ ตั้งค่าอย่างเดียวที่ต้องแก้: API_URL ด้านล่าง
  *    (ต้องเป็น URL เดียวกับใน app.js)
  * ===================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyCAHt-GZpsoP-NXADVuNwrWp3Yov0DQmAfFvkQcZTqCPbvlMW-NWGsx5Qgb0maucbw/exec';
+const API_URL = 'วาง URL ของ GAS Web App ที่นี่';
 
 const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
                      'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -103,10 +103,14 @@ function renderList(albums) {
       <div class="info">
         <b>${a.name}
           <span class="status-pill ${a.status}">${a.status === 'show' ? 'แสดง' : 'ซ่อนอยู่'}</span>
+          ${a.featured ? '<span class="status-pill featured"><i class="ti ti-star-filled"></i> แนะนำ</span>' : ''}
         </b>
-        <span>${thaiDate(a.date)} · ${a.category || 'ไม่มีหมวด'} · ${a.photoCount} รูป · ${a.views} วิว</span>
+        <span>${thaiDate(a.date)} · ${a.category || 'ไม่มีหมวด'} · ${a.photoCount} รูป · ${a.views} วิว · ♥ ${a.likes || 0}</span>
       </div>
       <div class="actions">
+        <button class="btn sm ${a.featured ? 'active-star' : ''}" data-act="feature" title="ปักหมุดเป็นอัลบั้มแนะนำหน้าแรก">
+          <i class="ti ti-star${a.featured ? '-filled' : ''}"></i> ${a.featured ? 'เลิกแนะนำ' : 'แนะนำ'}
+        </button>
         <button class="btn sm" data-act="rescan" title="สแกนรูปในโฟลเดอร์ใหม่">
           <i class="ti ti-refresh"></i> สแกนใหม่
         </button>
@@ -178,6 +182,10 @@ async function handleRowAction(id, act) {
     const data = await api({ action: 'rescanAlbum', id });
     toast(data.ok ? `สแกนเสร็จ พบรูปทั้งหมด ${data.photoCount} รูป` : data.error, !data.ok);
   }
+  if (act === 'feature') {
+    const data = await api({ action: 'toggleFeatured', id });
+    toast(data.ok ? (data.featured ? 'ปักหมุดเป็นอัลบั้มแนะนำแล้ว' : 'ยกเลิกการแนะนำแล้ว') : data.error, !data.ok);
+  }
   loadAlbums();
 }
 
@@ -192,16 +200,15 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-add').addEventListener('click', addAlbum);
   $('#btn-scan-parent').addEventListener('click', scanParentFolder);
 
-  // ฟอร์มเพิ่มทีละอัน: ถ้าชื่อกิจกรรมมีวันที่ติดมา (เช่น "65-05-18 กีฬาสี")
-  // → เติมวันที่ + ปีการศึกษาให้อัตโนมัติ และตัดวันที่ออกจากชื่อ
+  // ฟอร์มเพิ่มทีละอัน: ถ้าชื่อกิจกรรมมีวันที่ติดมา (เช่น "69-01-01 กีฬาสี")
+  // → เติมวันที่ + ปีการศึกษาให้อัตโนมัติ (คงชื่อกิจกรรมเต็มไว้ ไม่ตัดวันที่ออก)
   $('#f-name').addEventListener('blur', () => {
     const found = findDateInName($('#f-name').value);
     if (!found) return;
-    if (!$('#f-date').value) $('#f-date').value = found.iso;
-    if (!$('#f-year').value) $('#f-year').value = academicYear(found.iso);
-    $('#f-name').value = $('#f-name').value
-      .replace(found.text, '').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '').trim();
-    toast('เติมวันที่และปีการศึกษาจากชื่อให้แล้ว');
+    let filled = false;
+    if (!$('#f-date').value) { $('#f-date').value = found.iso; filled = true; }
+    if (!$('#f-year').value) { $('#f-year').value = academicYear(found.iso); filled = true; }
+    if (filled) toast('เติมวันที่และปีการศึกษาจากชื่อให้แล้ว');
   });
 
   $('#album-list').addEventListener('click', e => {
@@ -241,23 +248,18 @@ let bulkBusy = false;
 
 /* ---------- เดาข้อมูลจากชื่อโฟลเดอร์ ---------- */
 function parseFolderName(rawName, createdDate) {
-  let name = rawName.trim();
+  const name = rawName.trim(); // ★ ชื่อกิจกรรม = ชื่อโฟลเดอร์เต็ม ไม่ตัดอะไรออก
   let date = '';
   let category = '';
 
-  // 1) หมวดหมู่จากวงเล็บเหลี่ยม เช่น "กีฬาสี [กีฬา]"
+  // 1) หมวดหมู่จากวงเล็บเหลี่ยม เช่น "กีฬาสี [กีฬา]" (อ่านมาเติมช่องหมวด แต่คงไว้ในชื่อ)
   const catMatch = name.match(/\[([^\]]+)\]/);
-  if (catMatch) {
-    category = catMatch[1].trim();
-    name = name.replace(catMatch[0], '').trim();
-  }
+  if (catMatch) category = catMatch[1].trim();
 
   // 2) วันที่จากชื่อ — รองรับปี 4 หลัก (พ.ศ./ค.ศ.) และปี พ.ศ. 2 หลัก เช่น 65-05-18
+  //    ใช้วันที่ไปเติมช่องวันที่จัด/ปีการศึกษา แต่ "ไม่ตัด" ออกจากชื่อ
   const found = findDateInName(name);
-  if (found) {
-    date = found.iso;
-    name = name.replace(found.text, '').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '').trim();
-  }
+  if (found) date = found.iso;
   if (!date) date = createdDate; // ไม่มีในชื่อ → ใช้วันที่สร้างโฟลเดอร์แทน
 
   // 3) หมวดหมู่จากคำในชื่อ (ถ้ายังไม่ได้จากวงเล็บ)
@@ -268,7 +270,7 @@ function parseFolderName(rawName, createdDate) {
   }
   if (!category) category = 'ทั่วไป';
 
-  return { name: name || rawName, date, category, year: academicYear(date) };
+  return { name, date, category, year: academicYear(date) };
 }
 
 /* ---------- หาวันที่ในข้อความ ---------- */
