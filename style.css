@@ -29,6 +29,10 @@ body {
 
 .container { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 
+/* สำคัญ: element ที่มี attribute hidden ต้องถูกซ่อนจริงเสมอ
+   (กัน .viewer/.photo-full ที่ตั้ง display:flex มาทับ hidden แล้วโผล่ตอนโหลด) */
+[hidden] { display: none !important; }
+
 /* ---------- ส่วนหัว ---------- */
 .site-header {
   background: var(--surface);
