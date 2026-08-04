@@ -4,7 +4,7 @@
  *  ★ ตั้งค่าอย่างเดียวที่ต้องแก้: API_URL ด้านล่าง
  *    (ต้องเป็น URL เดียวกับใน app.js)
  * ===================================================== */
-const API_URL = 'วาง URL ของ GAS Web App ที่นี่';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyCAHt-GZpsoP-NXADVuNwrWp3Yov0DQmAfFvkQcZTqCPbvlMW-NWGsx5Qgb0maucbw/exec';
 
 const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
                      'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
