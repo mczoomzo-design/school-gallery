@@ -4,12 +4,22 @@
  *  ★ ตั้งค่าอย่างเดียวที่ต้องแก้: API_URL ด้านล่าง
  *    (ต้องเป็น URL เดียวกับใน app.js)
  * ===================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyCAHt-GZpsoP-NXADVuNwrWp3Yov0DQmAfFvkQcZTqCPbvlMW-NWGsx5Qgb0maucbw/exec';
+const API_URL = 'วาง URL ของ GAS Web App ที่นี่';
 
 const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
                      'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
 const $ = s => document.querySelector(s);
+
+/* เช็คว่าลืมใส่ URL ของ GAS หรือยัง (กันงงแบบ error 405) */
+function apiUrlReady() {
+  if (!API_URL || API_URL.indexOf('script.google.com') === -1) {
+    toast('ยังไม่ได้ใส่ URL ของ GAS ในไฟล์ admin.js (บรรทัด API_URL)', true);
+    return false;
+  }
+  return true;
+}
+
 const thumb = id => `https://drive.google.com/thumbnail?id=${id}&sz=w200`;
 const thaiDate = iso => {
   if (!iso) return 'ไม่ระบุวันที่';
@@ -37,6 +47,7 @@ async function api(payload) {
 
 /* ---------- login ---------- */
 async function login() {
+  if (!apiUrlReady()) return;
   const btn = $('#btn-login');
   btn.disabled = true;
   try {
