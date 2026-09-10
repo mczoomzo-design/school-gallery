@@ -48,19 +48,48 @@ async function loadAlbums() {
     return;
   }
   try {
-    const res = await fetch(`${API_URL}?action=getAlbums`);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
+    const data = await fetchAlbums();
     state.albums = data.albums;
     buildFilters();
     render();
     focusFromUrl(); // ถ้ามี ?album=... ให้เลื่อนไปไฮไลต์อัลบั้มที่แชร์มา
   } catch (err) {
     $('#album-grid').innerHTML =
-      `<div class="empty"><i class="ti ti-plug-x"></i>เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่ภายหลัง</div>`;
+      `<div class="empty">
+         <i class="ti ti-plug-x"></i>
+         เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่อีกครั้ง
+         <div class="empty-actions"><button class="btn primary" id="btn-retry"><i class="ti ti-refresh"></i> ลองใหม่</button></div>
+       </div>`;
     $('#pagination').innerHTML = '';
+    const rb = $('#btn-retry');
+    if (rb) rb.addEventListener('click', loadAlbums);
     console.error(err);
   }
+}
+
+/* ดึงรายการอัลบั้มแบบทนทาน: ลองซ้ำอัตโนมัติ + timeout
+   กันอาการ Apps Script เด้ง 404/ตอบ HTML เป็นครั้งคราว (googleusercontent/macros/echo) */
+async function fetchAlbums(attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000); // ไม่ตอบใน 15 วิ ถือว่าล้มเหลว
+    try {
+      const res = await fetch(`${API_URL}?action=getAlbums&_=${Date.now()}`, { signal: ctrl.signal });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON (Google อาจจำกัดชั่วคราว)'); }
+      if (!data.ok) throw new Error(data.error || 'api error');
+      return data;
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1))); // หน่วงก่อนลองใหม่
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
 }
 
 function renderSkeleton() {
