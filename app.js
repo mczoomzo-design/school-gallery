@@ -54,6 +54,7 @@ async function loadAlbums() {
     state.albums = data.albums;
     buildFilters();
     render();
+    focusFromUrl(); // ถ้ามี ?album=... ให้เลื่อนไปไฮไลต์อัลบั้มที่แชร์มา
   } catch (err) {
     $('#album-grid').innerHTML =
       `<div class="empty"><i class="ti ti-plug-x"></i>เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่ภายหลัง</div>`;
@@ -160,6 +161,9 @@ function renderGrid() {
             <i class="ti ti-heart${liked ? '-filled' : ''}"></i>
             <span class="like-count" data-like-count="${a.id}">${a.likes || 0}</span>
           </button>
+          <button class="icon-btn" data-act="share" data-id="${a.id}" aria-label="แชร์ลิงก์อัลบั้ม ${a.name}">
+            <i class="ti ti-share-2"></i>
+          </button>
           <button class="card-link" data-act="open" data-id="${a.id}" data-folder="${a.folderId}">
             <i class="ti ti-external-link"></i> เปิด Drive
           </button>
@@ -214,6 +218,61 @@ function goToPage(page) {
 function openAlbum(id, folderId) {
   fetch(`${API_URL}?action=view&id=${id}`).catch(() => {}); // นับยอด ไม่ต้องรอผล
   window.open(folderUrl(folderId), '_blank', 'noopener');
+}
+
+/* =====================================================
+ *  แชร์ลิงก์เข้าอัลบั้มโดยตรง
+ *  ลิงก์รูปแบบ  <โดเมนเว็บ>/?album=<id>
+ *  เปิดแล้วจะเลื่อนไปไฮไลต์อัลบั้มนั้นให้อัตโนมัติ (focusFromUrl)
+ * ===================================================== */
+const albumUrl = id => location.origin + location.pathname + '?album=' + encodeURIComponent(id);
+
+async function shareAlbum(album) {
+  const url = albumUrl(album.id);
+  const text = `${album.name}${album.date ? ' · ' + thaiDate(album.date) : ''}\nคลังภาพกิจกรรมโรงเรียน`;
+  // มือถือ/เบราว์เซอร์ที่รองรับ → เรียกเมนูแชร์ของเครื่อง (LINE, Messenger ฯลฯ)
+  if (navigator.share) {
+    try { await navigator.share({ title: album.name, text, url }); return; }
+    catch (err) { if (err && err.name === 'AbortError') return; } // ผู้ใช้กดยกเลิก
+  }
+  // ไม่รองรับ → คัดลอกลิงก์ไปคลิปบอร์ด
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('คัดลอกลิงก์อัลบั้มแล้ว');
+  } catch (err) {
+    window.prompt('คัดลอกลิงก์นี้เพื่อแชร์', url);
+  }
+}
+
+/* เปิดเว็บด้วยลิงก์ ?album=<id> → เคลียร์ตัวกรอง เลื่อนไปหน้าที่ใช่ แล้วไฮไลต์การ์ด */
+function focusFromUrl() {
+  const id = new URLSearchParams(location.search).get('album');
+  if (!id) return;
+  const album = state.albums.find(a => a.id === id);
+  if (!album) { toast('ไม่พบอัลบั้มที่แชร์มา', true); return; }
+
+  // เคลียร์ตัวกรอง/ค้นหา ให้แน่ใจว่าอัลบั้มจะแสดง
+  state.category = ''; state.year = ''; state.keyword = ''; state.view = 'grid';
+  const search = $('#search'); if (search) search.value = '';
+  const ys = $('#year-select'); if (ys) ys.value = '';
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.cat === ''));
+  $('#btn-grid').classList.add('active'); $('#btn-cal').classList.remove('active');
+  $('#btn-grid').setAttribute('aria-selected', 'true');
+  $('#btn-cal').setAttribute('aria-selected', 'false');
+
+  // หาว่าอัลบั้มอยู่หน้าไหนของมุมมองกริด
+  const list = filtered();
+  const idx = list.findIndex(a => a.id === id);
+  state.page = idx >= 0 ? Math.floor(idx / PER_PAGE) + 1 : 1;
+  render();
+
+  requestAnimationFrame(() => {
+    const card = document.querySelector(`.album-card[data-id="${id}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('spotlight');
+    setTimeout(() => card.classList.remove('spotlight'), 3200);
+  });
 }
 
 /* =====================================================
@@ -406,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!album) return;
     if (act === 'open') openAlbum(album.id, album.folderId);
     else if (act === 'like') toggleLike(album, el);
+    else if (act === 'share') shareAlbum(album);
   };
   document.body.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
