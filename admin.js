@@ -151,7 +151,8 @@ async function addAlbum() {
     name: $('#f-name').value.trim(),
     category: $('#f-cat').value.trim(),
     date: $('#f-date').value,
-    year: $('#f-year').value.trim()
+    year: $('#f-year').value.trim(),
+    notify: true            // แจ้งเตือนเข้า LINE เฉพาะการเพิ่มทีละอัลบั้ม (นำเข้าเป็นชุดจะไม่ส่ง)
   };
   if (!payload.folderUrl) return toast('กรุณาวางลิงก์โฟลเดอร์ Drive', true);
   if (!payload.name) return toast('กรุณากรอกชื่อกิจกรรม', true);
