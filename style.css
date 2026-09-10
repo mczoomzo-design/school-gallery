@@ -520,6 +520,7 @@ select.year-select option { color: var(--text); background: #fff; }
   animation: cardIn .5s var(--ease) backwards;
 }
 .empty i { font-size: 40px; display: block; margin-bottom: 12px; opacity: .45; color: var(--accent); }
+.empty-actions { margin-top: 16px; }
 
 /* ---------- ส่วนท้าย ---------- */
 .site-footer {
