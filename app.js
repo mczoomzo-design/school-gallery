@@ -38,22 +38,61 @@ function toast(msg, isError) {
   setTimeout(() => t.className = '', 2800);
 }
 
+/* ---------- แคชรายการอัลบั้มไว้ในเบราว์เซอร์ (กันเว็บค้าง/โหลดช้า) ----------
+   แนวคิด stale-while-revalidate: แสดงข้อมูลล่าสุดที่บันทึกไว้ "ทันที"
+   แล้วค่อยดึงข้อมูลใหม่จาก API เบื้องหลัง ถ้า API ล่ม เว็บก็ยังใช้ได้ */
+const ALBUMS_LS_KEY = 'gh_albums_v1';
+function saveAlbumsCache(albums) {
+  try { localStorage.setItem(ALBUMS_LS_KEY, JSON.stringify({ t: Date.now(), albums })); } catch (e) {}
+}
+function readAlbumsCache() {
+  try {
+    const o = JSON.parse(localStorage.getItem(ALBUMS_LS_KEY) || 'null');
+    return o && Array.isArray(o.albums) ? o.albums : null;
+  } catch (e) { return null; }
+}
+
 /* ---------- โหลดข้อมูล ---------- */
 async function loadAlbums() {
-  renderSkeleton();
   if (!API_URL || API_URL.indexOf('script.google.com') === -1) {
     $('#album-grid').innerHTML =
       `<div class="empty"><i class="ti ti-settings"></i>ยังไม่ได้ตั้งค่า URL ของ GAS ในไฟล์ app.js (บรรทัด API_URL)</div>`;
     $('#pagination').innerHTML = '';
     return;
   }
+
+  const cached = readAlbumsCache();
+  if (cached && cached.length) {
+    // มีข้อมูลเก่า → โชว์ทันที ไม่ต้องรอ ไม่มีหน้าโหลด แล้วค่อยรีเฟรชเงียบๆ
+    state.albums = cached;
+    buildFilters();
+    render();
+    focusFromUrl();
+    refreshAlbums(true);
+    return;
+  }
+
+  // ยังไม่เคยมีข้อมูล → โหลดปกติ (มีโครงกระดูก)
+  renderSkeleton();
+  refreshAlbums(false);
+}
+
+/* ดึงข้อมูลใหม่จาก API — silent=true คือรีเฟรชเบื้องหลังโดยไม่รบกวนผู้ใช้ */
+async function refreshAlbums(silent) {
   try {
     const data = await fetchAlbums();
     state.albums = data.albums;
+    saveAlbumsCache(data.albums);
+    // จำตัวกรองที่ผู้ใช้เลือกไว้ก่อนสร้าง chip ใหม่ (กันรีเซ็ตตอนรีเฟรชเบื้องหลัง)
+    const cat = state.category, yr = state.year;
     buildFilters();
+    document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.cat === cat));
+    const ys = $('#year-select'); if (ys) ys.value = yr;
     render();
-    focusFromUrl(); // ถ้ามี ?album=... ให้เลื่อนไปไฮไลต์อัลบั้มที่แชร์มา
+    if (!silent) focusFromUrl();
   } catch (err) {
+    console.error(err);
+    if (silent) return; // มีข้อมูลแคชแสดงอยู่แล้ว — เงียบไว้ ไม่ต้องแจ้ง error
     $('#album-grid').innerHTML =
       `<div class="empty">
          <i class="ti ti-plug-x"></i>
@@ -63,7 +102,6 @@ async function loadAlbums() {
     $('#pagination').innerHTML = '';
     const rb = $('#btn-retry');
     if (rb) rb.addEventListener('click', loadAlbums);
-    console.error(err);
   }
 }
 
