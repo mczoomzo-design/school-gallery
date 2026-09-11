@@ -35,14 +35,39 @@ function toast(msg, isError) {
 }
 
 /* ---------- เรียก API ฝั่งเขียน (POST แบบ text/plain เลี่ยง CORS preflight) ---------- */
+/* เรียก GAS แบบทนทาน: ลองซ้ำ + timeout
+   กันอาการ Apps Script เด้ง 404/ตอบ HTML เป็นครั้งคราว ทำให้ล็อกอิน/กดปุ่มไม่ติด */
+async function postGAS(payload, opts) {
+  opts = opts || {};
+  const attempts = opts.attempts || 3;
+  const timeout = opts.timeout || 45000; // เผื่อเวลาสแกนโฟลเดอร์ใหญ่
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      });
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON (Google อาจสะดุดชั่วคราว)'); }
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 async function api(payload) {
   payload.token = sessionStorage.getItem('gh_token') || '';
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload)
-  });
-  return res.json();
+  return postGAS(payload);
 }
 
 /* ---------- login ---------- */
@@ -50,24 +75,22 @@ async function login() {
   if (!apiUrlReady()) return;
   const btn = $('#btn-login');
   btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<i class="ti ti-loader-2"></i> กำลังเข้าสู่ระบบ…';
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'login',
-        username: $('#username').value.trim(),
-        password: $('#password').value
-      })
+    const data = await postGAS({
+      action: 'login',
+      username: $('#username').value.trim(),
+      password: $('#password').value
     });
-    const data = await res.json();
     if (!data.ok) return toast(data.error, true);
     sessionStorage.setItem('gh_token', data.token);
     showAdmin();
   } catch (err) {
-    toast('เชื่อมต่อระบบไม่ได้', true);
+    toast('เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่อีกครั้ง', true);
   } finally {
     btn.disabled = false;
+    btn.innerHTML = original;
   }
 }
 
