@@ -462,6 +462,8 @@ async function bulkImport() {
   } else {
     toast(`นำเข้าสำเร็จครบ ${success} อัลบั้ม`);
   }
+  // เผยแพร่ albums.json ครั้งเดียวหลังนำเข้าเป็นชุด (ถ้า backend รองรับ) — กันคอมมิตรัวๆ
+  if (success) { try { await api({ action: 'publish' }); } catch (err) {} }
   $('#bulk-preview').innerHTML = '';
   $('#b-url').value = '';
   loadAlbums();

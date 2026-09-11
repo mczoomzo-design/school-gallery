@@ -105,13 +105,35 @@ async function refreshAlbums(silent) {
   }
 }
 
-/* ดึงรายการอัลบั้มแบบทนทาน: ลองซ้ำอัตโนมัติ + timeout
-   กันอาการ Apps Script เด้ง 404/ตอบ HTML เป็นครั้งคราว (googleusercontent/macros/echo) */
-async function fetchAlbums(attempts = 3) {
+/* ดึงรายการอัลบั้ม
+   1) ลองไฟล์ static `albums.json` บน GitHub Pages ก่อน — เร็ว/นิ่งสุด ไม่พึ่ง GAS
+   2) ถ้ายังไม่มีไฟล์/โหลดไม่ได้ → fallback ไป Apps Script (มี retry กันอาการเด้ง 404) */
+async function fetchAlbums() {
+  const fromJson = await fetchAlbumsJson();
+  if (fromJson) return fromJson;
+  return fetchAlbumsGAS();
+}
+
+/* อ่าน albums.json (ถ้ามี) — คืน null เงียบๆ ถ้าไม่มี/ผิดพลาด เพื่อไป fallback ต่อ */
+async function fetchAlbumsJson() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(`albums.json?_=${Date.now()}`, { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;                 // ยังไม่ได้เผยแพร่ไฟล์ → ไป GAS
+    const data = await res.json();
+    if (data && Array.isArray(data.albums)) return { ok: true, albums: data.albums };
+    return null;
+  } catch (e) { return null; }
+}
+
+/* fallback: เรียก Apps Script แบบทนทาน (ลองซ้ำ + timeout) */
+async function fetchAlbumsGAS(attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000); // ไม่ตอบใน 15 วิ ถือว่าล้มเหลว
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
       const res = await fetch(`${API_URL}?action=getAlbums&_=${Date.now()}`, { signal: ctrl.signal });
       const text = await res.text();
@@ -122,7 +144,7 @@ async function fetchAlbums(attempts = 3) {
       return data;
     } catch (err) {
       lastErr = err;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1))); // หน่วงก่อนลองใหม่
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
     } finally {
       clearTimeout(timer);
     }
@@ -224,9 +246,8 @@ function renderGrid() {
         </div>
         <div class="card-actions">
           <button class="like-btn${liked ? ' liked' : ''}" data-act="like" data-id="${a.id}"
-                  aria-label="ถูกใจ ${a.name}" aria-pressed="${liked}">
+                  aria-label="บันทึกเป็นรายการโปรด ${a.name}" aria-pressed="${liked}" title="รายการโปรด">
             <i class="ti ti-heart${liked ? '-filled' : ''}"></i>
-            <span class="like-count" data-like-count="${a.id}">${a.likes || 0}</span>
           </button>
           <button class="icon-btn" data-act="share" data-id="${a.id}" aria-label="แชร์ลิงก์อัลบั้ม ${a.name}">
             <i class="ti ti-share-2"></i>
@@ -366,7 +387,7 @@ function renderFeatured() {
 }
 
 /* =====================================================
- *  ปุ่มถูกใจ — เก็บสถานะว่าเคยกดไว้ใน localStorage กันกดซ้ำ
+ *  ปุ่มรายการโปรด — เก็บในเครื่อง (localStorage) อย่างเดียว ไม่พึ่งเซิร์ฟเวอร์
  * ===================================================== */
 function likedSet() {
   try { return new Set(JSON.parse(localStorage.getItem('gh_liked') || '[]')); }
@@ -377,22 +398,14 @@ function isLiked(id) { return likedSet().has(id); }
 function toggleLike(album, btn) {
   const set = likedSet();
   const liked = set.has(album.id);
-  const dir = liked ? 'down' : 'up';
-  // อัปเดต UI ทันที (optimistic)
-  const countEl = btn.querySelector('.like-count');
   const icon = btn.querySelector('i');
-  let n = Number(countEl.textContent) || 0;
-  n = liked ? Math.max(0, n - 1) : n + 1;
-  countEl.textContent = n;
+  // สลับสถานะโปรด + อัปเดตไอคอนทันที
   btn.classList.toggle('liked', !liked);
   btn.setAttribute('aria-pressed', String(!liked));
   icon.className = `ti ti-heart${!liked ? '-filled' : ''}`;
-  // บันทึกสถานะ + อัปเดตข้อมูลในหน่วยความจำ
+  // บันทึกลงเครื่อง
   if (liked) set.delete(album.id); else set.add(album.id);
   localStorage.setItem('gh_liked', JSON.stringify([...set]));
-  album.likes = n;
-  // ยิงไปเซิร์ฟเวอร์ (ไม่ต้องรอผล)
-  fetch(`${API_URL}?action=like&id=${album.id}&dir=${dir}`).catch(() => {});
 }
 
 /* ===================== มุมมองปฏิทิน ===================== */
