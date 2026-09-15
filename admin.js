@@ -35,39 +35,14 @@ function toast(msg, isError) {
 }
 
 /* ---------- เรียก API ฝั่งเขียน (POST แบบ text/plain เลี่ยง CORS preflight) ---------- */
-/* เรียก GAS แบบทนทาน: ลองซ้ำ + timeout
-   กันอาการ Apps Script เด้ง 404/ตอบ HTML เป็นครั้งคราว ทำให้ล็อกอิน/กดปุ่มไม่ติด */
-async function postGAS(payload, opts) {
-  opts = opts || {};
-  const attempts = opts.attempts || 3;
-  const timeout = opts.timeout || 45000; // เผื่อเวลาสแกนโฟลเดอร์ใหญ่
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeout);
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        signal: ctrl.signal
-      });
-      const text = await res.text();
-      try { return JSON.parse(text); }
-      catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON (Google อาจสะดุดชั่วคราว)'); }
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastErr;
-}
-
 async function api(payload) {
   payload.token = sessionStorage.getItem('gh_token') || '';
-  return postGAS(payload);
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
 }
 
 /* ---------- login ---------- */
@@ -75,22 +50,24 @@ async function login() {
   if (!apiUrlReady()) return;
   const btn = $('#btn-login');
   btn.disabled = true;
-  const original = btn.innerHTML;
-  btn.innerHTML = '<i class="ti ti-loader-2"></i> กำลังเข้าสู่ระบบ…';
   try {
-    const data = await postGAS({
-      action: 'login',
-      username: $('#username').value.trim(),
-      password: $('#password').value
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'login',
+        username: $('#username').value.trim(),
+        password: $('#password').value
+      })
     });
+    const data = await res.json();
     if (!data.ok) return toast(data.error, true);
     sessionStorage.setItem('gh_token', data.token);
     showAdmin();
   } catch (err) {
-    toast('เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่อีกครั้ง', true);
+    toast('เชื่อมต่อระบบไม่ได้', true);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = original;
   }
 }
 
@@ -174,8 +151,7 @@ async function addAlbum() {
     name: $('#f-name').value.trim(),
     category: $('#f-cat').value.trim(),
     date: $('#f-date').value,
-    year: $('#f-year').value.trim(),
-    notify: true            // แจ้งเตือนเข้า LINE เฉพาะการเพิ่มทีละอัลบั้ม (นำเข้าเป็นชุดจะไม่ส่ง)
+    year: $('#f-year').value.trim()
   };
   if (!payload.folderUrl) return toast('กรุณาวางลิงก์โฟลเดอร์ Drive', true);
   if (!payload.name) return toast('กรุณากรอกชื่อกิจกรรม', true);
@@ -485,8 +461,6 @@ async function bulkImport() {
   } else {
     toast(`นำเข้าสำเร็จครบ ${success} อัลบั้ม`);
   }
-  // เผยแพร่ albums.json ครั้งเดียวหลังนำเข้าเป็นชุด (ถ้า backend รองรับ) — กันคอมมิตรัวๆ
-  if (success) { try { await api({ action: 'publish' }); } catch (err) {} }
   $('#bulk-preview').innerHTML = '';
   $('#b-url').value = '';
   loadAlbums();

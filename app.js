@@ -38,118 +38,28 @@ function toast(msg, isError) {
   setTimeout(() => t.className = '', 2800);
 }
 
-/* ---------- แคชรายการอัลบั้มไว้ในเบราว์เซอร์ (กันเว็บค้าง/โหลดช้า) ----------
-   แนวคิด stale-while-revalidate: แสดงข้อมูลล่าสุดที่บันทึกไว้ "ทันที"
-   แล้วค่อยดึงข้อมูลใหม่จาก API เบื้องหลัง ถ้า API ล่ม เว็บก็ยังใช้ได้ */
-const ALBUMS_LS_KEY = 'gh_albums_v1';
-function saveAlbumsCache(albums) {
-  try { localStorage.setItem(ALBUMS_LS_KEY, JSON.stringify({ t: Date.now(), albums })); } catch (e) {}
-}
-function readAlbumsCache() {
-  try {
-    const o = JSON.parse(localStorage.getItem(ALBUMS_LS_KEY) || 'null');
-    return o && Array.isArray(o.albums) ? o.albums : null;
-  } catch (e) { return null; }
-}
-
 /* ---------- โหลดข้อมูล ---------- */
 async function loadAlbums() {
+  renderSkeleton();
   if (!API_URL || API_URL.indexOf('script.google.com') === -1) {
     $('#album-grid').innerHTML =
       `<div class="empty"><i class="ti ti-settings"></i>ยังไม่ได้ตั้งค่า URL ของ GAS ในไฟล์ app.js (บรรทัด API_URL)</div>`;
     $('#pagination').innerHTML = '';
     return;
   }
-
-  const cached = readAlbumsCache();
-  if (cached && cached.length) {
-    // มีข้อมูลเก่า → โชว์ทันที ไม่ต้องรอ ไม่มีหน้าโหลด แล้วค่อยรีเฟรชเงียบๆ
-    state.albums = cached;
-    buildFilters();
-    render();
-    focusFromUrl();
-    refreshAlbums(true);
-    return;
-  }
-
-  // ยังไม่เคยมีข้อมูล → โหลดปกติ (มีโครงกระดูก)
-  renderSkeleton();
-  refreshAlbums(false);
-}
-
-/* ดึงข้อมูลใหม่จาก API — silent=true คือรีเฟรชเบื้องหลังโดยไม่รบกวนผู้ใช้ */
-async function refreshAlbums(silent) {
   try {
-    const data = await fetchAlbums();
-    state.albums = data.albums;
-    saveAlbumsCache(data.albums);
-    // จำตัวกรองที่ผู้ใช้เลือกไว้ก่อนสร้าง chip ใหม่ (กันรีเซ็ตตอนรีเฟรชเบื้องหลัง)
-    const cat = state.category, yr = state.year;
-    buildFilters();
-    document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.cat === cat));
-    const ys = $('#year-select'); if (ys) ys.value = yr;
-    render();
-    if (!silent) focusFromUrl();
-  } catch (err) {
-    console.error(err);
-    if (silent) return; // มีข้อมูลแคชแสดงอยู่แล้ว — เงียบไว้ ไม่ต้องแจ้ง error
-    $('#album-grid').innerHTML =
-      `<div class="empty">
-         <i class="ti ti-plug-x"></i>
-         เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่อีกครั้ง
-         <div class="empty-actions"><button class="btn primary" id="btn-retry"><i class="ti ti-refresh"></i> ลองใหม่</button></div>
-       </div>`;
-    $('#pagination').innerHTML = '';
-    const rb = $('#btn-retry');
-    if (rb) rb.addEventListener('click', loadAlbums);
-  }
-}
-
-/* ดึงรายการอัลบั้ม
-   1) ลองไฟล์ static `albums.json` บน GitHub Pages ก่อน — เร็ว/นิ่งสุด ไม่พึ่ง GAS
-   2) ถ้ายังไม่มีไฟล์/โหลดไม่ได้ → fallback ไป Apps Script (มี retry กันอาการเด้ง 404) */
-async function fetchAlbums() {
-  const fromJson = await fetchAlbumsJson();
-  if (fromJson) return fromJson;
-  return fetchAlbumsGAS();
-}
-
-/* อ่าน albums.json (ถ้ามี) — คืน null เงียบๆ ถ้าไม่มี/ผิดพลาด เพื่อไป fallback ต่อ */
-async function fetchAlbumsJson() {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(`albums.json?_=${Date.now()}`, { cache: 'no-store', signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!res.ok) return null;                 // ยังไม่ได้เผยแพร่ไฟล์ → ไป GAS
+    const res = await fetch(`${API_URL}?action=getAlbums`);
     const data = await res.json();
-    if (data && Array.isArray(data.albums)) return { ok: true, albums: data.albums };
-    return null;
-  } catch (e) { return null; }
-}
-
-/* fallback: เรียก Apps Script แบบทนทาน (ลองซ้ำ + timeout) */
-async function fetchAlbumsGAS(attempts = 3) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const res = await fetch(`${API_URL}?action=getAlbums&_=${Date.now()}`, { signal: ctrl.signal });
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); }
-      catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON (Google อาจจำกัดชั่วคราว)'); }
-      if (!data.ok) throw new Error(data.error || 'api error');
-      return data;
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
-    } finally {
-      clearTimeout(timer);
-    }
+    if (!data.ok) throw new Error(data.error);
+    state.albums = data.albums;
+    buildFilters();
+    render();
+  } catch (err) {
+    $('#album-grid').innerHTML =
+      `<div class="empty"><i class="ti ti-plug-x"></i>เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่ภายหลัง</div>`;
+    $('#pagination').innerHTML = '';
+    console.error(err);
   }
-  throw lastErr;
 }
 
 function renderSkeleton() {
@@ -246,11 +156,9 @@ function renderGrid() {
         </div>
         <div class="card-actions">
           <button class="like-btn${liked ? ' liked' : ''}" data-act="like" data-id="${a.id}"
-                  aria-label="บันทึกเป็นรายการโปรด ${a.name}" aria-pressed="${liked}" title="รายการโปรด">
+                  aria-label="ถูกใจ ${a.name}" aria-pressed="${liked}">
             <i class="ti ti-heart${liked ? '-filled' : ''}"></i>
-          </button>
-          <button class="icon-btn" data-act="share" data-id="${a.id}" aria-label="แชร์ลิงก์อัลบั้ม ${a.name}">
-            <i class="ti ti-share-2"></i>
+            <span class="like-count" data-like-count="${a.id}">${a.likes || 0}</span>
           </button>
           <button class="card-link" data-act="open" data-id="${a.id}" data-folder="${a.folderId}">
             <i class="ti ti-external-link"></i> เปิด Drive
@@ -309,61 +217,6 @@ function openAlbum(id, folderId) {
 }
 
 /* =====================================================
- *  แชร์ลิงก์เข้าอัลบั้มโดยตรง
- *  ลิงก์รูปแบบ  <โดเมนเว็บ>/?album=<id>
- *  เปิดแล้วจะเลื่อนไปไฮไลต์อัลบั้มนั้นให้อัตโนมัติ (focusFromUrl)
- * ===================================================== */
-const albumUrl = id => location.origin + location.pathname + '?album=' + encodeURIComponent(id);
-
-async function shareAlbum(album) {
-  const url = albumUrl(album.id);
-  const text = `${album.name}${album.date ? ' · ' + thaiDate(album.date) : ''}\nคลังภาพกิจกรรมโรงเรียน`;
-  // มือถือ/เบราว์เซอร์ที่รองรับ → เรียกเมนูแชร์ของเครื่อง (LINE, Messenger ฯลฯ)
-  if (navigator.share) {
-    try { await navigator.share({ title: album.name, text, url }); return; }
-    catch (err) { if (err && err.name === 'AbortError') return; } // ผู้ใช้กดยกเลิก
-  }
-  // ไม่รองรับ → คัดลอกลิงก์ไปคลิปบอร์ด
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('คัดลอกลิงก์อัลบั้มแล้ว');
-  } catch (err) {
-    window.prompt('คัดลอกลิงก์นี้เพื่อแชร์', url);
-  }
-}
-
-/* เปิดเว็บด้วยลิงก์ ?album=<id> → เคลียร์ตัวกรอง เลื่อนไปหน้าที่ใช่ แล้วไฮไลต์การ์ด */
-function focusFromUrl() {
-  const id = new URLSearchParams(location.search).get('album');
-  if (!id) return;
-  const album = state.albums.find(a => a.id === id);
-  if (!album) { toast('ไม่พบอัลบั้มที่แชร์มา', true); return; }
-
-  // เคลียร์ตัวกรอง/ค้นหา ให้แน่ใจว่าอัลบั้มจะแสดง
-  state.category = ''; state.year = ''; state.keyword = ''; state.view = 'grid';
-  const search = $('#search'); if (search) search.value = '';
-  const ys = $('#year-select'); if (ys) ys.value = '';
-  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.cat === ''));
-  $('#btn-grid').classList.add('active'); $('#btn-cal').classList.remove('active');
-  $('#btn-grid').setAttribute('aria-selected', 'true');
-  $('#btn-cal').setAttribute('aria-selected', 'false');
-
-  // หาว่าอัลบั้มอยู่หน้าไหนของมุมมองกริด
-  const list = filtered();
-  const idx = list.findIndex(a => a.id === id);
-  state.page = idx >= 0 ? Math.floor(idx / PER_PAGE) + 1 : 1;
-  render();
-
-  requestAnimationFrame(() => {
-    const card = document.querySelector(`.album-card[data-id="${id}"]`);
-    if (!card) return;
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    card.classList.add('spotlight');
-    setTimeout(() => card.classList.remove('spotlight'), 3200);
-  });
-}
-
-/* =====================================================
  *  แบนเนอร์รูปเด่นประจำสัปดาห์ (อัลบั้มที่ครูปักหมุด)
  * ===================================================== */
 function renderFeatured() {
@@ -387,7 +240,7 @@ function renderFeatured() {
 }
 
 /* =====================================================
- *  ปุ่มรายการโปรด — เก็บในเครื่อง (localStorage) อย่างเดียว ไม่พึ่งเซิร์ฟเวอร์
+ *  ปุ่มถูกใจ — เก็บสถานะว่าเคยกดไว้ใน localStorage กันกดซ้ำ
  * ===================================================== */
 function likedSet() {
   try { return new Set(JSON.parse(localStorage.getItem('gh_liked') || '[]')); }
@@ -398,14 +251,22 @@ function isLiked(id) { return likedSet().has(id); }
 function toggleLike(album, btn) {
   const set = likedSet();
   const liked = set.has(album.id);
+  const dir = liked ? 'down' : 'up';
+  // อัปเดต UI ทันที (optimistic)
+  const countEl = btn.querySelector('.like-count');
   const icon = btn.querySelector('i');
-  // สลับสถานะโปรด + อัปเดตไอคอนทันที
+  let n = Number(countEl.textContent) || 0;
+  n = liked ? Math.max(0, n - 1) : n + 1;
+  countEl.textContent = n;
   btn.classList.toggle('liked', !liked);
   btn.setAttribute('aria-pressed', String(!liked));
   icon.className = `ti ti-heart${!liked ? '-filled' : ''}`;
-  // บันทึกลงเครื่อง
+  // บันทึกสถานะ + อัปเดตข้อมูลในหน่วยความจำ
   if (liked) set.delete(album.id); else set.add(album.id);
   localStorage.setItem('gh_liked', JSON.stringify([...set]));
+  album.likes = n;
+  // ยิงไปเซิร์ฟเวอร์ (ไม่ต้องรอผล)
+  fetch(`${API_URL}?action=like&id=${album.id}&dir=${dir}`).catch(() => {});
 }
 
 /* ===================== มุมมองปฏิทิน ===================== */
@@ -545,7 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!album) return;
     if (act === 'open') openAlbum(album.id, album.folderId);
     else if (act === 'like') toggleLike(album, el);
-    else if (act === 'share') shareAlbum(album);
   };
   document.body.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
